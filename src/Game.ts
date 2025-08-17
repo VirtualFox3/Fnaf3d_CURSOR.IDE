@@ -250,6 +250,7 @@ export class Game {
     this.rightDoorClosed = false;
     this.doorTargetsY.left = 4.2;
     this.doorTargetsY.right = 4.2;
+    this.scene.background = new THREE.Color(0x050505);
 
     for (const anim of this.animatronics) {
       this.scene.remove(anim.mesh);
