@@ -48,6 +48,8 @@ window.addEventListener('keydown', (ev) => {
     case '2': game.setCamera('leftHall'); break;
     case '3': game.setCamera('rightHall'); break;
     case '4': game.setCamera('back'); break;
+    case '5': game.setCamera('leftDoor'); break;
+    case '6': game.setCamera('rightDoor'); break;
     case 'q': case 'Q': game.toggleLeftDoor(); break;
     case 'e': case 'E': game.toggleRightDoor(); break;
   }
