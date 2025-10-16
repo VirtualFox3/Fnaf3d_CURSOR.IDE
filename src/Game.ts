@@ -1,6 +1,9 @@
 import * as THREE from 'three';
+import { StaticNoisePass } from './effects/StaticNoisePass';
+import { MonitorUI } from './ui/MonitorUI';
+import type { MonitorCamera } from './ui/MonitorUI';
 
-export type CameraName = 'office' | 'stage' | 'leftHall' | 'rightHall' | 'back';
+export type CameraName = 'office' | 'stage' | 'leftHall' | 'rightHall' | 'back' | 'leftDoor' | 'rightDoor';
 
 export interface GameUiState {
   cameraName: string;
@@ -19,6 +22,13 @@ interface NodeDef {
   name: string;
   position: THREE.Vector3;
   neighbors: string[];
+}
+
+interface ThumbnailBuffer {
+  width: number;
+  height: number;
+  raw: Uint8Array;
+  flipped: Uint8ClampedArray;
 }
 
 class Animatronic {
@@ -171,8 +181,28 @@ export class Game {
   private elapsedNightSeconds = 0;
   private readonly nightDurationSeconds = 180; // 3 minutes to reach 6 AM
 
+  private readonly isMobile: boolean;
+  private readonly monitorCameras: MonitorCamera[];
+  private readonly monitorTargets: Map<CameraName, THREE.WebGLRenderTarget> = new Map();
+  private readonly monitorBuffers: Map<CameraName, ThumbnailBuffer> = new Map();
+  private readonly monitorResolution: { width: number; height: number };
+  private monitorRefreshTimer = 0;
+  private monitorNeedsImmediateRefresh = true;
+  private readonly monitorRefreshInterval: number;
+  private readonly monitorUI: MonitorUI;
+  private monitorOverlayOpen = false;
+
+  private readonly staticNoisePass: StaticNoisePass;
+  private readonly mainSceneTarget: THREE.WebGLRenderTarget;
+  private readonly hudElement: HTMLElement | null;
+
   constructor(options: GameOptions) {
     this.options = options;
+
+    this.isMobile = window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768;
+    this.monitorResolution = this.isMobile ? { width: 160, height: 90 } : { width: 256, height: 144 };
+    this.monitorRefreshInterval = this.isMobile ? 0.75 : 0.3;
+    this.hudElement = document.getElementById('hud');
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x050505);
@@ -181,8 +211,19 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
 
+    this.mainSceneTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: true,
+      stencilBuffer: false
+    });
+    this.mainSceneTarget.texture.generateMipmaps = false;
+    this.mainSceneTarget.texture.colorSpace = this.renderer.outputColorSpace;
+    this.staticNoisePass = new StaticNoisePass(window.innerWidth, window.innerHeight, this.isMobile ? 0.3 : 0.22);
+
     options.mountElement.innerHTML = '';
     options.mountElement.appendChild(this.renderer.domElement);
+    this.renderer.domElement.style.pointerEvents = 'auto';
 
     this.clock = new THREE.Clock();
 
@@ -217,6 +258,16 @@ export class Game {
 
     // Cameras
     this.initCameras();
+    this.monitorCameras = this.buildMonitorCameraList();
+    this.setupMonitorTargets();
+    this.monitorUI = new MonitorUI({
+      cameras: this.monitorCameras,
+      onOpen: this.handleMonitorOpen,
+      onClose: this.handleMonitorClose,
+      onCameraSelected: (name) => this.setCamera(name)
+    });
+    this.monitorUI.setActiveCamera(this.activeCameraName);
+    this.monitorNeedsImmediateRefresh = true;
 
     // Node graph
     this.graph = this.buildGraph();
@@ -242,6 +293,9 @@ export class Game {
 
   public reset(): void {
     // Dispose meshes and reinitialize
+    if (this.monitorUI.isOverlayOpen()) {
+      this.monitorUI.close();
+    }
     this.running = false;
     this.ended = false;
     this.powerOutage = false;
@@ -267,10 +321,18 @@ export class Game {
   public isEnded(): boolean { return this.ended; }
 
   public setCamera(name: CameraName): void {
-    if (this.activeCameraName === name) return;
     const cam = this.cameras.get(name);
     if (!cam) return;
+
+    this.monitorUI.setActiveCamera(name);
+
+    if (this.activeCameraName === name) {
+      this.monitorNeedsImmediateRefresh = true;
+      return;
+    }
+
     this.activeCameraName = name;
+    this.monitorNeedsImmediateRefresh = true;
     this.pushUi();
   }
 
@@ -294,8 +356,8 @@ export class Game {
       this.updateGame(dt);
     }
 
-    const camera = this.cameras.get(this.activeCameraName)!;
-    this.renderer.render(this.scene, camera);
+    this.updateMonitorThumbnails(dt);
+    this.renderFrame();
 
     requestAnimationFrame(this.loop);
   };
@@ -324,6 +386,86 @@ export class Game {
 
     // UI
     this.pushUi();
+  }
+
+  private setupMonitorTargets(): void {
+    for (const target of this.monitorTargets.values()) {
+      target.dispose();
+    }
+    this.monitorTargets.clear();
+    this.monitorBuffers.clear();
+
+    const { width, height } = this.monitorResolution;
+    for (const cam of this.monitorCameras) {
+      const target = new THREE.WebGLRenderTarget(width, height, {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        depthBuffer: true,
+        stencilBuffer: false
+      });
+      target.texture.generateMipmaps = false;
+      target.texture.colorSpace = this.renderer.outputColorSpace;
+      this.monitorTargets.set(cam.name, target);
+
+      const raw = new Uint8Array(width * height * 4);
+      const flipped = new Uint8ClampedArray(width * height * 4);
+      this.monitorBuffers.set(cam.name, { width, height, raw, flipped });
+    }
+  }
+
+  private updateMonitorThumbnails(dt: number): void {
+    if (this.monitorTargets.size === 0) return;
+
+    const interval = this.monitorOverlayOpen ? this.monitorRefreshInterval : this.monitorRefreshInterval * 2.5;
+    this.monitorRefreshTimer += dt;
+    if (!this.monitorNeedsImmediateRefresh && this.monitorRefreshTimer < interval) {
+      return;
+    }
+
+    this.monitorRefreshTimer = 0;
+    this.monitorNeedsImmediateRefresh = false;
+
+    for (const cam of this.monitorCameras) {
+      const camera = this.cameras.get(cam.name);
+      const target = this.monitorTargets.get(cam.name);
+      if (!camera || !target) continue;
+      this.renderer.setRenderTarget(target);
+      this.renderer.render(this.scene, camera);
+      this.captureMonitorTarget(cam.name, target);
+    }
+
+    this.renderer.setRenderTarget(null);
+  }
+
+  private renderFrame(): void {
+    const camera = this.cameras.get(this.activeCameraName);
+    if (!camera) return;
+
+    if (this.monitorOverlayOpen) {
+      this.renderer.setRenderTarget(this.mainSceneTarget);
+      this.renderer.render(this.scene, camera);
+      this.staticNoisePass.render(this.renderer, this.mainSceneTarget);
+    } else {
+      this.renderer.setRenderTarget(null);
+      this.renderer.render(this.scene, camera);
+    }
+  }
+
+  private captureMonitorTarget(name: CameraName, target: THREE.WebGLRenderTarget): void {
+    const buffer = this.monitorBuffers.get(name);
+    if (!buffer) return;
+
+    const { width, height, raw, flipped } = buffer;
+    this.renderer.readRenderTargetPixels(target, 0, 0, width, height, raw);
+
+    const stride = width * 4;
+    for (let y = 0; y < height; y++) {
+      const srcOffset = (height - 1 - y) * stride;
+      const dstOffset = y * stride;
+      flipped.set(raw.subarray(srcOffset, srcOffset + stride), dstOffset);
+    }
+
+    this.monitorUI.updateCameraPreview(name, flipped, width, height);
   }
 
   private updatePower(dt: number): void {
@@ -388,8 +530,9 @@ export class Game {
 
   private pushUi(): void {
     const timeString = this.computeTimeString();
+    const cameraLabel = this.monitorCameras.find((cam) => cam.name === this.activeCameraName)?.label ?? this.activeCameraName;
     this.options.onUiUpdate({
-      cameraName: this.activeCameraName.toUpperCase(),
+      cameraName: cameraLabel.toUpperCase(),
       timeString,
       powerPercent: this.powerPercent
     });
@@ -434,6 +577,14 @@ export class Game {
     rightHallCam.position.set(6, 1.7, 6);
     rightHallCam.lookAt(4, 1.4, 1);
 
+    const leftDoorCam = makeCam();
+    leftDoorCam.position.set(-4.3, 1.7, -1.2);
+    leftDoorCam.lookAt(-4, 1.3, 0.8);
+
+    const rightDoorCam = makeCam();
+    rightDoorCam.position.set(4.3, 1.7, -1.2);
+    rightDoorCam.lookAt(4, 1.3, 0.8);
+
     const backCam = makeCam();
     backCam.position.set(0, 2.0, 16);
     backCam.lookAt(0, 1.6, 20);
@@ -441,8 +592,22 @@ export class Game {
     this.cameras.set('office', officeCam);
     this.cameras.set('stage', stageCam);
     this.cameras.set('leftHall', leftHallCam);
+    this.cameras.set('leftDoor', leftDoorCam);
+    this.cameras.set('rightDoor', rightDoorCam);
     this.cameras.set('rightHall', rightHallCam);
     this.cameras.set('back', backCam);
+  }
+
+  private buildMonitorCameraList(): MonitorCamera[] {
+    return [
+      { name: 'office', label: 'Office' },
+      { name: 'stage', label: 'Show Stage' },
+      { name: 'leftHall', label: 'Left Hall' },
+      { name: 'leftDoor', label: 'Left Door' },
+      { name: 'rightDoor', label: 'Right Door' },
+      { name: 'rightHall', label: 'Right Hall' },
+      { name: 'back', label: 'Rear Hall' }
+    ];
   }
 
   private addHallWalls(): void {
@@ -537,5 +702,21 @@ export class Game {
       cam.updateProjectionMatrix();
     }
     this.renderer.setSize(width, height);
+    this.mainSceneTarget.setSize(width, height);
+    this.staticNoisePass.setSize(width, height);
+    this.monitorNeedsImmediateRefresh = true;
+  };
+
+  private handleMonitorOpen = (): void => {
+    this.monitorOverlayOpen = true;
+    this.monitorNeedsImmediateRefresh = true;
+    this.renderer.domElement.style.pointerEvents = 'none';
+    if (this.hudElement) this.hudElement.style.pointerEvents = 'none';
+  };
+
+  private handleMonitorClose = (): void => {
+    this.monitorOverlayOpen = false;
+    this.renderer.domElement.style.pointerEvents = 'auto';
+    if (this.hudElement) this.hudElement.style.pointerEvents = '';
   };
 }
