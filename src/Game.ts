@@ -6,6 +6,10 @@ export interface GameUiState {
   cameraName: string;
   timeString: string;
   powerPercent: number;
+  monitorActive: boolean;
+  leftDoorClosed: boolean;
+  rightDoorClosed: boolean;
+  ended: boolean;
 }
 
 interface GameOptions {
@@ -147,7 +151,10 @@ export class Game {
   private readonly scene: THREE.Scene;
   private readonly renderer: THREE.WebGLRenderer;
   private readonly cameras: Map<CameraName, THREE.PerspectiveCamera> = new Map();
+  private readonly cameraSequence: CameraName[] = ['office', 'stage', 'leftHall', 'rightHall', 'back'];
+  private nonOfficeCameras: CameraName[] = [];
   private activeCameraName: CameraName = 'office';
+  private lastNonOfficeCamera: CameraName = 'stage';
   private readonly clock: THREE.Clock;
 
   private disposed = false;
@@ -180,6 +187,7 @@ export class Game {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.domElement.style.pointerEvents = 'none';
 
     options.mountElement.innerHTML = '';
     options.mountElement.appendChild(this.renderer.domElement);
@@ -217,6 +225,8 @@ export class Game {
 
     // Cameras
     this.initCameras();
+    this.nonOfficeCameras = this.cameraSequence.filter((cam) => cam !== 'office');
+    this.lastNonOfficeCamera = this.nonOfficeCameras[0] ?? 'stage';
 
     // Node graph
     this.graph = this.buildGraph();
@@ -250,6 +260,7 @@ export class Game {
     this.rightDoorClosed = false;
     this.doorTargetsY.left = 4.2;
     this.doorTargetsY.right = 4.2;
+    this.lastNonOfficeCamera = this.nonOfficeCameras[0] ?? 'stage';
 
     for (const anim of this.animatronics) {
       this.scene.remove(anim.mesh);
@@ -271,6 +282,9 @@ export class Game {
     const cam = this.cameras.get(name);
     if (!cam) return;
     this.activeCameraName = name;
+    if (name !== 'office') {
+      this.lastNonOfficeCamera = name;
+    }
     this.pushUi();
   }
 
@@ -284,6 +298,27 @@ export class Game {
     if (this.ended || this.powerOutage) return;
     this.rightDoorClosed = !this.rightDoorClosed;
     this.doorTargetsY.right = this.rightDoorClosed ? 1.6 : 4.2;
+  }
+
+  public toggleMonitor(): void {
+    if (this.ended || this.powerOutage) return;
+    if (this.activeCameraName === 'office') {
+      const fallback = this.lastNonOfficeCamera ?? this.nonOfficeCameras[0] ?? 'stage';
+      this.setCamera(fallback);
+    } else {
+      this.setCamera('office');
+    }
+  }
+
+  public cycleCamera(direction: 1 | -1): void {
+    if (this.ended || this.powerOutage) return;
+    if (this.nonOfficeCameras.length === 0) return;
+    const reference = this.activeCameraName === 'office' ? this.lastNonOfficeCamera : this.activeCameraName;
+    const currentIndex = this.nonOfficeCameras.indexOf(reference);
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (safeIndex + direction + this.nonOfficeCameras.length) % this.nonOfficeCameras.length;
+    const target = this.nonOfficeCameras[nextIndex];
+    this.setCamera(target);
   }
 
   private loop = (): void => {
@@ -389,10 +424,31 @@ export class Game {
   private pushUi(): void {
     const timeString = this.computeTimeString();
     this.options.onUiUpdate({
-      cameraName: this.activeCameraName.toUpperCase(),
+      cameraName: this.formatCameraName(this.activeCameraName),
       timeString,
-      powerPercent: this.powerPercent
+      powerPercent: this.powerPercent,
+      monitorActive: this.activeCameraName !== 'office',
+      leftDoorClosed: this.leftDoorClosed,
+      rightDoorClosed: this.rightDoorClosed,
+      ended: this.ended
     });
+  }
+
+  private formatCameraName(name: CameraName): string {
+    switch (name) {
+      case 'office':
+        return 'Office';
+      case 'stage':
+        return 'Stage';
+      case 'leftHall':
+        return 'Left Hall';
+      case 'rightHall':
+        return 'Right Hall';
+      case 'back':
+        return 'Back Room';
+      default:
+        return name.toUpperCase();
+    }
   }
 
   private computeTimeString(): string {
@@ -404,12 +460,14 @@ export class Game {
 
   private win(): void {
     this.ended = true;
-    this.options.onGameMessage('6 AM! You survived. Press R to restart');
+    this.options.onGameMessage('6 AM! You survived. Tap Retry to play again.');
+    this.pushUi();
   }
 
   private lose(): void {
     this.ended = true;
-    this.options.onGameMessage('Caught by an animatronic! Press R to restart');
+    this.options.onGameMessage('Caught by an animatronic! Tap Retry to try again.');
+    this.pushUi();
   }
 
   private initCameras(): void {
