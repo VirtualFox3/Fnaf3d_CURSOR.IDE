@@ -2,6 +2,12 @@
 
 A Five Nights at Freddy's-inspired 3D horror game built with Three.js, TypeScript, and Vite. Features animatronic AI, multiple camera views, door controls, power management, and touch controls for mobile devices.
 
+## Repository Structure
+
+This repository contains:
+- **Root**: The FNAF-style 3D game (Three.js)
+- **apps/noha-player-web**: A React PWA for video playback and playlist management (see [apps/noha-player-web/README.md](apps/noha-player-web/README.md))
+
 ## Features
 
 - **3D Graphics**: Real-time 3D rendering with Three.js
