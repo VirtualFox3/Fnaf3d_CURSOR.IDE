@@ -7,6 +7,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: basePath,
+    esbuild: {
+      jsx: 'automatic',
+      jsxImportSource: 'react'
+    },
     plugins: [
       compression({ algorithm: 'brotliCompress', apply: 'build', deleteOriginFile: false }),
       compression({ algorithm: 'gzip', apply: 'build', deleteOriginFile: false })
@@ -25,14 +29,9 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       cssCodeSplit: true,
       chunkSizeWarningLimit: 1024,
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            three: ['three']
-          }
-        }
-      },
       esbuild: {
+        jsx: 'automatic',
+        jsxImportSource: 'react',
         drop: ['console', 'debugger']
       }
     }
