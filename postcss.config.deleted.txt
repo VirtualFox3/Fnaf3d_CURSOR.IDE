@@ -1,0 +1,1 @@
+This file was intentionally created to work around terminal issues. The postcss.config.js file should be deleted.

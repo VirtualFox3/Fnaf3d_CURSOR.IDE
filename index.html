@@ -1,41 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FNAF-Style 3D (Three.js)</title>
-    <style>
-      html, body, #app { height: 100%; margin: 0; overflow: hidden; background: #000; }
-      #hud { position: fixed; left: 0; right: 0; bottom: 0; color: #0f0; font-family: monospace; font-size: 14px; padding: 8px 12px; display: flex; justify-content: space-between; pointer-events: none; text-shadow: 0 0 8px rgba(0,255,0,0.6); }
-      #hud .block { pointer-events: auto; }
-      #hud .right { text-align: right; }
-      #centerMsg { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-family: monospace; font-size: 28px; text-shadow: 0 0 12px rgba(255,255,255,0.7); display: none; }
-      #powerBar { width: 180px; height: 8px; border: 1px solid #0f0; box-shadow: 0 0 8px rgba(0,255,0,0.5) inset; margin-top: 4px; }
-      #powerFill { height: 100%; background: #0f0; width: 100%; }
-      #instructions { position: fixed; left: 8px; top: 8px; color: #ccc; font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.1); padding: 8px; white-space: pre; max-width: 44ch; }
-    </style>
+    <title>Video Library</title>
   </head>
   <body>
-    <div id="app"></div>
-    <div id="centerMsg"></div>
-    <div id="instructions">
-      Controls:
-      - 0: Office Camera
-      - 1..4: Switch CCTV Cams
-      - Q: Toggle Left Door
-      - E: Toggle Right Door
-      - R: Restart after win/lose
-    </div>
-    <div id="hud">
-      <div class="block">
-        <div>Cam: <span id="camName">OFFICE</span></div>
-        <div>Time: <span id="timeStr">12 AM</span></div>
-      </div>
-      <div class="block right">
-        <div>Power: <span id="powerPct">100%</span></div>
-        <div id="powerBar"><div id="powerFill"></div></div>
-      </div>
-    </div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

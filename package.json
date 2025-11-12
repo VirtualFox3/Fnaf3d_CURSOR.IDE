@@ -8,14 +8,27 @@
     "build": "vite build",
     "preview": "vite preview --host --port 5173",
     "deploy": "bash scripts/deploy.sh",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
     "test:smoke": "bash scripts/smoke-test.sh"
   },
   "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.5",
     "three": "^0.165.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.4",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "jsdom": "^27.2.0",
     "typescript": "^5.5.4",
     "vite": "^5.4.0",
-    "vite-plugin-compression": "^0.5.1"
+    "vite-plugin-compression": "^0.5.1",
+    "vitest": "^4.0.8"
   }
 }
