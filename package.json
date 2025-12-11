@@ -3,6 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/noha-player-web"
+  ],
   "scripts": {
     "dev": "vite --host --port 5173",
     "build": "vite build",
