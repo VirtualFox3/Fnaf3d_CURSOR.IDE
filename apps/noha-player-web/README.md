@@ -83,6 +83,24 @@ Run ESLint:
 npm run lint
 ```
 
+## Deployment
+
+The app is automatically deployed to GitHub Pages via GitHub Actions.
+
+- **Live URL**: https://<user>.github.io/<repo>/noha-player/
+- **Workflow**: `.github/workflows/gh-pages-noha-player.yml`
+
+To run the deployment workflow locally (dry run):
+
+1. Build the project with the base path:
+```bash
+VITE_BASE_PATH=/noha-player/ npm run build
+```
+2. Preview the build:
+```bash
+npm run preview
+```
+
 ## PWA Installation
 
 ### Desktop (Chrome/Edge/Brave)
